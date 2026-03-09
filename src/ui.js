@@ -4,7 +4,7 @@ export function renderHtml() {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>実践将棋</title>
+    <title>リアル将棋</title>
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
@@ -12,9 +12,10 @@ export function renderHtml() {
       <section class="hero">
         <div class="hero-copy">
           <p class="eyebrow">練度制オンライン対局</p>
-          <h1>実践将棋</h1>
+          <h1>リアル将棋</h1>
           <p class="lede">
-            和の空気感を残しながら、ルーム作成、招待、接続確認までを静かに進めるための対局ロビーです。
+            各駒には成功率を表す「練度」があり、駒ごとの行動はその練度に応じて成功または失敗します。
+            通常の将棋と同じ盤面で戦いながら、配分した練度と確率の読み合いが加わる対戦ゲームです。
           </p>
         </div>
         <aside class="hero-note">
@@ -39,7 +40,7 @@ export function renderHtml() {
 
         <div class="row single">
           <label for="player-name">表示名</label>
-          <input id="player-name" maxlength="24" placeholder="平原" />
+          <input id="player-name" maxlength="24" placeholder="名前を入力" />
         </div>
 
         <div class="row actions">
