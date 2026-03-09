@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "shogi-app",
+  "main": "src/index.js",
+  "compatibility_date": "2026-03-09",
+  "observability": {
+    "enabled": true
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "GAME_ROOM",
+        "class_name": "GameRoom"
+      }
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "shogi-app",
+      "database_id": "4c960aab-48f8-45b8-aaa3-fcf016fd2757",
+      "migrations_dir": "schema"
+    }
+  ],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "GameRoom"
+      ]
+    }
+  ]
+}
