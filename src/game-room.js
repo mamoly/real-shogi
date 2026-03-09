@@ -1,11 +1,99 @@
 import { DurableObject } from "cloudflare:workers";
 
+const PIECE_CODE = {
+  "歩": "fu",
+  "香": "kyo",
+  "桂": "kei",
+  "銀": "gin",
+  "金": "kin",
+  "角": "kaku",
+  "飛": "hi",
+  "王": "ou"
+};
+
+function createPiece(owner, kind, index) {
+  return {
+    id: `${owner}-${PIECE_CODE[kind]}-${index}`,
+    owner,
+    kind,
+    promoted: false
+  };
+}
+
+function createInitialBoard() {
+  return [
+    [
+      createPiece("gote", "香", 1),
+      createPiece("gote", "桂", 1),
+      createPiece("gote", "銀", 1),
+      createPiece("gote", "金", 1),
+      createPiece("gote", "王", 1),
+      createPiece("gote", "金", 2),
+      createPiece("gote", "銀", 2),
+      createPiece("gote", "桂", 2),
+      createPiece("gote", "香", 2)
+    ],
+    [
+      null,
+      createPiece("gote", "角", 1),
+      null,
+      null,
+      null,
+      null,
+      null,
+      createPiece("gote", "飛", 1),
+      null
+    ],
+    Array.from({ length: 9 }, (_, index) => createPiece("gote", "歩", index + 1)),
+    Array.from({ length: 9 }, () => null),
+    Array.from({ length: 9 }, () => null),
+    Array.from({ length: 9 }, () => null),
+    Array.from({ length: 9 }, (_, index) => createPiece("sente", "歩", index + 1)),
+    [
+      null,
+      createPiece("sente", "飛", 1),
+      null,
+      null,
+      null,
+      null,
+      null,
+      createPiece("sente", "角", 1),
+      null
+    ],
+    [
+      createPiece("sente", "香", 1),
+      createPiece("sente", "桂", 1),
+      createPiece("sente", "銀", 1),
+      createPiece("sente", "金", 1),
+      createPiece("sente", "王", 1),
+      createPiece("sente", "金", 2),
+      createPiece("sente", "銀", 2),
+      createPiece("sente", "桂", 2),
+      createPiece("sente", "香", 2)
+    ]
+  ];
+}
+
+function createGameState() {
+  return {
+    phase: "lobby",
+    currentTurn: "sente",
+    moveNumber: 1,
+    board: createInitialBoard(),
+    captured: {
+      sente: [],
+      gote: []
+    }
+  };
+}
+
 function createDefaultRoomState() {
   return {
     roomId: null,
     createdAt: null,
     players: [],
-    status: "waiting"
+    status: "waiting",
+    game: createGameState()
   };
 }
 
@@ -34,7 +122,8 @@ export class GameRoom extends DurableObject {
           roomId: payload.roomId,
           createdAt: new Date().toISOString(),
           players: [],
-          status: "waiting"
+          status: "waiting",
+          game: createGameState()
         };
         await this.saveState();
       }
@@ -94,6 +183,7 @@ export class GameRoom extends DurableObject {
       }
 
       this.roomState.status = this.roomState.players.length === 2 ? "ready" : "waiting";
+      this.roomState.game.phase = this.roomState.players.length === 2 ? "ready" : "lobby";
       await this.saveState();
 
       ws.send(JSON.stringify({ type: "joined", room: this.roomState }));

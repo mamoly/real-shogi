@@ -24,7 +24,7 @@ export function renderHtml() {
             <li>対局ルームを作る</li>
             <li>招待URLを共有する</li>
             <li>二人まで入室する</li>
-            <li>接続状態を確認する</li>
+            <li>初期盤面を確認する</li>
           </ul>
         </aside>
       </section>
@@ -65,44 +65,83 @@ export function renderHtml() {
         </p>
       </section>
 
-      <section class="grid">
-        <article class="panel">
+      <section class="battlefield">
+        <article class="panel board-panel">
           <div class="panel-head">
             <div>
-              <p class="section-kicker">対局室</p>
-              <h2>現在の状態</h2>
+              <p class="section-kicker">対局盤</p>
+              <h2>初期配置</h2>
             </div>
-            <span id="connection-pill" class="pill">未接続</span>
+            <div class="turn-badges">
+              <span class="chip" id="phase-label">入室受付中</span>
+              <span class="pill" id="turn-label">手番: 先手</span>
+            </div>
           </div>
-          <dl class="stats">
-            <div>
-              <dt>ルーム</dt>
-              <dd id="room-label">未設定</dd>
+
+          <div class="captured captured-top">
+            <div class="captured-head">
+              <span>後手の持ち駒</span>
+              <span class="captured-note">今は未使用</span>
             </div>
-            <div>
-              <dt>状態</dt>
-              <dd id="status-label">未設定</dd>
+            <div id="gote-captured" class="captured-list"></div>
+          </div>
+
+          <div class="board-wrap">
+            <div class="board-top-labels" id="board-top-labels"></div>
+            <div class="board-main">
+              <div class="board-side-labels" id="board-side-labels"></div>
+              <div id="board" class="board"></div>
             </div>
-            <div>
-              <dt>あなたのID</dt>
-              <dd id="player-id-label">-</dd>
+          </div>
+
+          <div class="captured captured-bottom">
+            <div class="captured-head">
+              <span>先手の持ち駒</span>
+              <span class="captured-note">今は未使用</span>
             </div>
-          </dl>
-          <div class="subsection">
-            <h3>参加者</h3>
-            <ul id="players" class="players"></ul>
+            <div id="sente-captured" class="captured-list"></div>
           </div>
         </article>
 
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="section-kicker">記録</p>
-              <h2>イベントログ</h2>
+        <div class="side-stack">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="section-kicker">対局室</p>
+                <h2>現在の状態</h2>
+              </div>
+              <span id="connection-pill" class="pill">未接続</span>
             </div>
-          </div>
-          <pre id="event-log" class="log"></pre>
-        </article>
+            <dl class="stats">
+              <div>
+                <dt>ルーム</dt>
+                <dd id="room-label">未設定</dd>
+              </div>
+              <div>
+                <dt>状態</dt>
+                <dd id="status-label">未設定</dd>
+              </div>
+              <div>
+                <dt>あなたのID</dt>
+                <dd id="player-id-label">-</dd>
+              </div>
+            </dl>
+            <div class="subsection">
+              <h3>参加者</h3>
+              <ul id="players" class="players"></ul>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="section-kicker">記録</p>
+                <h2>イベントログ</h2>
+              </div>
+            </div>
+            <pre id="event-log" class="log"></pre>
+          </article>
+        </div>
       </section>
     </main>
     <script type="module" src="/app.js"></script>
@@ -117,12 +156,14 @@ export const appCss = `
   --bg-bottom: #e7dcc7;
   --paper: rgba(255, 250, 241, 0.86);
   --paper-strong: rgba(255, 248, 236, 0.97);
-  --line: #cfbb98;
+  --board-surface: #d8b97c;
+  --board-cell: #e6ca94;
+  --board-cell-dark: #d7b57a;
+  --board-line: #8d6b3e;
   --line-soft: rgba(118, 83, 41, 0.16);
   --ink: #201710;
   --muted: #6a5b4a;
   --accent: #7d2f1f;
-  --accent-soft: #c56d45;
   --gold: #a68743;
   --online: #356857;
   --offline: #7a756d;
@@ -166,14 +207,14 @@ body::before {
 
 .shell {
   position: relative;
-  width: min(1120px, calc(100vw - 32px));
+  width: min(1180px, calc(100vw - 32px));
   margin: 0 auto;
   padding: 44px 0 72px;
 }
 
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.8fr);
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.8fr);
   gap: 18px;
   align-items: stretch;
   margin-bottom: 18px;
@@ -223,7 +264,7 @@ h1 {
 }
 
 .lede {
-  max-width: 36rem;
+  max-width: 38rem;
   margin: 18px 0 0;
   color: var(--muted);
   font-size: 16px;
@@ -294,6 +335,13 @@ h3 {
 .pill.online {
   background: rgba(53, 104, 87, 0.14);
   color: var(--online);
+}
+
+.turn-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .row {
@@ -376,10 +424,178 @@ button:hover {
   font-size: 13px;
 }
 
-.grid {
+.battlefield {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.72fr);
   gap: 18px;
+}
+
+.side-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.board-panel {
+  padding-bottom: 22px;
+}
+
+.captured {
+  margin: 0 22px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(141, 107, 62, 0.18);
+  background:
+    linear-gradient(180deg, rgba(245, 233, 210, 0.52), rgba(239, 226, 200, 0.32));
+}
+
+.captured-top {
+  margin-top: 4px;
+  margin-bottom: 12px;
+}
+
+.captured-bottom {
+  margin-top: 14px;
+}
+
+.captured-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.captured-note {
+  color: var(--muted);
+}
+
+.captured-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.captured-piece,
+.captured-empty {
+  min-height: 36px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 13px;
+  border: 1px solid rgba(141, 107, 62, 0.18);
+  background: rgba(255, 250, 241, 0.72);
+}
+
+.captured-empty {
+  color: var(--muted);
+}
+
+.board-wrap {
+  margin: 0 22px;
+  padding: 16px;
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(125, 47, 31, 0.08), transparent 14%),
+    rgba(115, 82, 39, 0.08);
+}
+
+.board-top-labels {
+  display: grid;
+  grid-template-columns: 22px repeat(9, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.board-main {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 6px;
+  align-items: stretch;
+}
+
+.board-side-labels {
+  display: grid;
+  grid-template-rows: repeat(9, minmax(0, 1fr));
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.board-axis {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+}
+
+.board {
+  aspect-ratio: 1 / 1;
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  grid-template-rows: repeat(9, minmax(0, 1fr));
+  gap: 1px;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--board-line);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 18px 30px rgba(74, 45, 18, 0.12);
+}
+
+.square {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(180deg, var(--board-cell), var(--board-cell-dark));
+}
+
+.square::after {
+  content: attr(data-pos);
+  position: absolute;
+  right: 5px;
+  bottom: 4px;
+  color: rgba(60, 43, 24, 0.35);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.square.empty {
+  background:
+    linear-gradient(180deg, rgba(230, 202, 148, 0.88), rgba(215, 181, 122, 0.84));
+}
+
+.piece {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 78%;
+  height: 84%;
+  clip-path: polygon(50% 0%, 90% 22%, 84% 100%, 16% 100%, 10% 22%);
+  background:
+    linear-gradient(180deg, #f7ecd1, #ead0a3);
+  border: 1px solid rgba(95, 62, 26, 0.18);
+  color: var(--ink);
+  font-size: clamp(14px, 2vw, 21px);
+  font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 2px 6px rgba(40, 24, 8, 0.08);
+}
+
+.piece.gote {
+  transform: rotate(180deg);
+}
+
+.piece.promoted {
+  color: var(--accent);
 }
 
 .stats {
@@ -462,9 +678,9 @@ button:hover {
   color: var(--muted);
 }
 
-@media (max-width: 860px) {
-  .hero,
-  .grid {
+@media (max-width: 980px) {
+  .battlefield,
+  .hero {
     grid-template-columns: 1fr;
   }
 }
@@ -487,12 +703,28 @@ button:hover {
   .stats {
     grid-template-columns: 1fr;
   }
+
+  .board-wrap,
+  .captured {
+    margin-left: 14px;
+    margin-right: 14px;
+  }
+
+  .panel-head,
+  .section-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 `;
 
 export const appJs = `
+const FILE_LABELS = ["9", "8", "7", "6", "5", "4", "3", "2", "1"];
+const RANK_LABELS = ["一", "二", "三", "四", "五", "六", "七", "八", "九"];
+
 const state = {
   roomId: "",
+  room: null,
   socket: null,
   playerId: loadOrCreatePlayerId()
 };
@@ -510,7 +742,14 @@ const elements = {
   statusLabel: document.querySelector("#status-label"),
   playerIdLabel: document.querySelector("#player-id-label"),
   players: document.querySelector("#players"),
-  eventLog: document.querySelector("#event-log")
+  eventLog: document.querySelector("#event-log"),
+  phaseLabel: document.querySelector("#phase-label"),
+  turnLabel: document.querySelector("#turn-label"),
+  goteCaptured: document.querySelector("#gote-captured"),
+  senteCaptured: document.querySelector("#sente-captured"),
+  board: document.querySelector("#board"),
+  boardTopLabels: document.querySelector("#board-top-labels"),
+  boardSideLabels: document.querySelector("#board-side-labels")
 };
 
 bootstrap();
@@ -522,6 +761,11 @@ function bootstrap() {
 
   elements.playerName.value = savedName;
   elements.playerIdLabel.textContent = state.playerId;
+
+  renderBoardLabels();
+  renderCaptured("gote", []);
+  renderCaptured("sente", []);
+  renderBoard(null);
 
   elements.createRoom.addEventListener("click", createRoom);
   elements.refreshRoom.addEventListener("click", refreshRoomState);
@@ -624,15 +868,27 @@ async function copyInviteLink() {
 }
 
 function applyRoom(room) {
+  state.room = room;
   state.roomId = room.roomId;
+
   elements.roomId.value = room.roomId;
   elements.roomLabel.textContent = room.roomId;
   elements.statusLabel.textContent = formatStatus(room.status);
+  elements.phaseLabel.textContent = formatPhase(room.game?.phase);
+  elements.turnLabel.textContent = "手番: " + formatSeat(room.game?.currentTurn);
   updateInviteLink();
   replaceQuery(room.roomId);
 
+  renderPlayers(room.players);
+  renderCaptured("gote", room.game?.captured?.gote ?? []);
+  renderCaptured("sente", room.game?.captured?.sente ?? []);
+  renderBoard(room.game?.board ?? null);
+}
+
+function renderPlayers(players) {
   elements.players.innerHTML = "";
-  for (const player of room.players) {
+
+  for (const player of players) {
     const item = document.createElement("li");
     const own = player.id === state.playerId ? "（あなた）" : "";
     item.innerHTML =
@@ -644,12 +900,71 @@ function applyRoom(room) {
     elements.players.appendChild(item);
   }
 
-  if (room.players.length === 0) {
+  if (players.length === 0) {
     const item = document.createElement("li");
     item.className = "empty-state";
     item.textContent = "まだ誰も入室していません。";
     elements.players.appendChild(item);
   }
+}
+
+function renderBoardLabels() {
+  elements.boardTopLabels.innerHTML = "<span></span>" + FILE_LABELS.map((label) => "<span class=\\"board-axis\\">" + label + "</span>").join("");
+  elements.boardSideLabels.innerHTML = RANK_LABELS.map((label) => "<span class=\\"board-axis\\">" + label + "</span>").join("");
+}
+
+function renderBoard(board) {
+  elements.board.innerHTML = "";
+
+  if (!board) {
+    for (let i = 0; i < 81; i += 1) {
+      const square = document.createElement("div");
+      square.className = "square empty";
+      elements.board.appendChild(square);
+    }
+    return;
+  }
+
+  board.forEach((row, rowIndex) => {
+    row.forEach((piece, colIndex) => {
+      const square = document.createElement("div");
+      square.className = "square" + (piece ? "" : " empty");
+      square.dataset.pos = FILE_LABELS[colIndex] + RANK_LABELS[rowIndex];
+
+      if (piece) {
+        const pieceNode = document.createElement("div");
+        pieceNode.className = "piece " + piece.owner + (piece.promoted ? " promoted" : "");
+        pieceNode.textContent = pieceLabel(piece);
+        square.appendChild(pieceNode);
+      }
+
+      elements.board.appendChild(square);
+    });
+  });
+}
+
+function renderCaptured(owner, pieces) {
+  const target = owner === "gote" ? elements.goteCaptured : elements.senteCaptured;
+  target.innerHTML = "";
+
+  if (pieces.length === 0) {
+    const empty = document.createElement("span");
+    empty.className = "captured-empty";
+    empty.textContent = "なし";
+    target.appendChild(empty);
+    return;
+  }
+
+  pieces.forEach((piece) => {
+    const node = document.createElement("span");
+    node.className = "captured-piece";
+    node.textContent = pieceLabel(piece);
+    target.appendChild(node);
+  });
+}
+
+function pieceLabel(piece) {
+  return piece.promoted ? "成" + piece.kind : piece.kind;
 }
 
 function updateInviteLink() {
@@ -700,13 +1015,20 @@ function loadOrCreatePlayerId() {
 function formatStatus(status) {
   if (status === "waiting") return "待機中";
   if (status === "ready") return "対局開始待ち";
-  return status;
+  return status || "未設定";
+}
+
+function formatPhase(phase) {
+  if (phase === "lobby") return "入室受付中";
+  if (phase === "ready") return "対局準備完了";
+  if (phase === "active") return "対局中";
+  return "未設定";
 }
 
 function formatSeat(seat) {
   if (seat === "sente") return "先手";
   if (seat === "gote") return "後手";
-  return seat;
+  return seat || "未定";
 }
 
 function formatMessage(payload) {
