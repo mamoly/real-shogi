@@ -567,6 +567,20 @@ button:hover {
   line-height: 1;
 }
 
+.square.legal::before {
+  content: "";
+  position: absolute;
+  width: 24%;
+  height: 24%;
+  border-radius: 999px;
+  background: rgba(53, 104, 87, 0.38);
+}
+
+.square.selected {
+  background:
+    linear-gradient(180deg, #f2dcae, #e0bc78);
+}
+
 .square.empty {
   background:
     linear-gradient(180deg, rgba(230, 202, 148, 0.88), rgba(215, 181, 122, 0.84));
@@ -596,6 +610,10 @@ button:hover {
 
 .piece.promoted {
   color: var(--accent);
+}
+
+.piece.selectable {
+  cursor: pointer;
 }
 
 .stats {
@@ -726,7 +744,9 @@ const state = {
   roomId: "",
   room: null,
   socket: null,
-  playerId: loadOrCreatePlayerId()
+  playerId: loadOrCreatePlayerId(),
+  selectedPieceId: null,
+  legalMoves: []
 };
 
 const elements = {
@@ -767,6 +787,7 @@ function bootstrap() {
   renderCaptured("sente", []);
   renderBoard(null);
 
+  elements.board.addEventListener("click", handleBoardClick);
   elements.createRoom.addEventListener("click", createRoom);
   elements.refreshRoom.addEventListener("click", refreshRoomState);
   elements.connectRoom.addEventListener("click", connectRoom);
@@ -870,6 +891,8 @@ async function copyInviteLink() {
 function applyRoom(room) {
   state.room = room;
   state.roomId = room.roomId;
+  state.selectedPieceId = null;
+  state.legalMoves = [];
 
   elements.roomId.value = room.roomId;
   elements.roomLabel.textContent = room.roomId;
@@ -930,12 +953,30 @@ function renderBoard(board) {
       const square = document.createElement("div");
       square.className = "square" + (piece ? "" : " empty");
       square.dataset.pos = FILE_LABELS[colIndex] + RANK_LABELS[rowIndex];
+      square.dataset.row = String(rowIndex);
+      square.dataset.col = String(colIndex);
 
       if (piece) {
+        square.dataset.pieceId = piece.id;
+        square.dataset.owner = piece.owner;
+
+        if (piece.id === state.selectedPieceId) {
+          square.classList.add("selected");
+        }
+
+        if (state.legalMoves.some((move) => move.row === rowIndex && move.col === colIndex)) {
+          square.classList.add("legal");
+        }
+
         const pieceNode = document.createElement("div");
         pieceNode.className = "piece " + piece.owner + (piece.promoted ? " promoted" : "");
+        if (canSelectPiece(piece)) {
+          pieceNode.classList.add("selectable");
+        }
         pieceNode.textContent = pieceLabel(piece);
         square.appendChild(pieceNode);
+      } else if (state.legalMoves.some((move) => move.row === rowIndex && move.col === colIndex)) {
+        square.classList.add("legal");
       }
 
       elements.board.appendChild(square);
@@ -965,6 +1006,98 @@ function renderCaptured(owner, pieces) {
 
 function pieceLabel(piece) {
   return piece.promoted ? "成" + piece.kind : piece.kind;
+}
+
+async function handleBoardClick(event) {
+  const square = event.target.closest(".square");
+  if (!square || !state.room) {
+    return;
+  }
+
+  const row = Number(square.dataset.row);
+  const col = Number(square.dataset.col);
+  const pieceId = square.dataset.pieceId;
+
+  if (state.selectedPieceId && isLegalDestination(row, col)) {
+    await moveSelectedPiece(row, col);
+    return;
+  }
+
+  if (!pieceId) {
+    clearSelection();
+    return;
+  }
+
+  const piece = square.dataset.owner ? { id: pieceId, owner: square.dataset.owner } : null;
+  if (!piece || !canSelectPiece(piece)) {
+    clearSelection();
+    return;
+  }
+
+  if (state.selectedPieceId === pieceId) {
+    clearSelection();
+    return;
+  }
+
+  await loadLegalMoves(pieceId);
+}
+
+async function loadLegalMoves(pieceId) {
+  const response = await fetch(
+    "/api/rooms/" + state.roomId + "/legal-moves?pieceId=" + encodeURIComponent(pieceId) + "&playerId=" + encodeURIComponent(state.playerId)
+  );
+  const payload = await response.json();
+
+  state.selectedPieceId = pieceId;
+  state.legalMoves = payload.moves ?? [];
+  renderBoard(state.room.game?.board ?? null);
+}
+
+async function moveSelectedPiece(toRow, toCol) {
+  const response = await fetch("/api/rooms/" + state.roomId + "/move", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      playerId: state.playerId,
+      pieceId: state.selectedPieceId,
+      toRow,
+      toCol
+    })
+  });
+
+  const payload = await response.json();
+  if (!response.ok) {
+    appendLog("着手できませんでした。理由: " + (payload.error ?? "不明"));
+    return;
+  }
+
+  appendLog("1手進みました。");
+  applyRoom(payload);
+}
+
+function clearSelection() {
+  state.selectedPieceId = null;
+  state.legalMoves = [];
+  renderBoard(state.room?.game?.board ?? null);
+}
+
+function isLegalDestination(row, col) {
+  return state.legalMoves.some((move) => move.row === row && move.col === col);
+}
+
+function canSelectPiece(piece) {
+  const mySeat = currentPlayerSeat();
+  if (!mySeat || !state.room?.game) {
+    return false;
+  }
+
+  return piece.owner === mySeat && state.room.game.currentTurn === mySeat && state.room.game.phase !== "finished";
+}
+
+function currentPlayerSeat() {
+  return state.room?.players?.find((player) => player.id === state.playerId)?.seat ?? null;
 }
 
 function updateInviteLink() {
@@ -1015,6 +1148,8 @@ function loadOrCreatePlayerId() {
 function formatStatus(status) {
   if (status === "waiting") return "待機中";
   if (status === "ready") return "対局開始待ち";
+  if (status === "active") return "対局中";
+  if (status === "finished") return "終局";
   return status || "未設定";
 }
 

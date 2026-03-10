@@ -58,13 +58,15 @@ export default {
       return json(room, { status: 201 });
     }
 
-    const match = url.pathname.match(/^\/api\/rooms\/([^/]+)(\/ws)?$/);
+    const match = url.pathname.match(/^\/api\/rooms\/([^/]+)(\/.*)?$/);
     if (match) {
       const roomId = match[1];
       const suffix = match[2] ?? "/";
       const id = env.GAME_ROOM.idFromName(roomId);
       const stub = env.GAME_ROOM.get(id);
-      const forwarded = new Request(`https://room.internal${suffix}`, request);
+      const forwardedUrl = new URL(`https://room.internal${suffix}`);
+      forwardedUrl.search = url.search;
+      const forwarded = new Request(forwardedUrl.toString(), request);
       return stub.fetch(forwarded);
     }
 

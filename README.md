@@ -59,11 +59,13 @@ This directory contains the minimum Cloudflare setup for the custom shogi app.
 - `GET /health`
 - `POST /api/rooms`
 - `GET /api/rooms/:roomId`
+- `GET /api/rooms/:roomId/legal-moves`
+- `POST /api/rooms/:roomId/move`
 - `GET /api/rooms/:roomId/ws`
 
 ## Notes
 
 - The Worker is authoritative for room creation and room state.
 - Durable Objects should own hidden information and probability resolution.
-- The current UI supports room creation, invite link generation, room lookup, WebSocket join flow, and initial shogi board display.
+- The current UI supports room creation, invite link generation, room lookup, WebSocket join flow, initial shogi board display, and one normal move.
 - D1 persistence is scaffolded but not wired into gameplay yet.
