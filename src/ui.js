@@ -1,3 +1,23 @@
+const PIECE_LABELS = {
+  FU: "歩",
+  KY: "香",
+  KE: "桂",
+  GI: "銀",
+  KI: "金",
+  KA: "角",
+  HI: "飛",
+  OU: "王"
+};
+
+const PROMOTED_LABELS = {
+  FU: "と",
+  KY: "成香",
+  KE: "成桂",
+  GI: "成銀",
+  KA: "馬",
+  HI: "龍"
+};
+
 export function renderHtml() {
   return `<!doctype html>
 <html lang="ja">
@@ -14,8 +34,9 @@ export function renderHtml() {
           <p class="eyebrow">練度制オンライン対局</p>
           <h1>リアル将棋</h1>
           <p class="lede">
-            各駒には成功率を表す「練度」があり、駒ごとの行動はその練度に応じて成功または失敗します。
-            通常の将棋と同じ盤面で戦いながら、配分した練度と確率の読み合いが加わる対戦ゲームです。
+            駒ごとに割り振った「練度」が、その一手の成功率になります。
+            同じ将棋の形でも、駒の精度と読み合いで勝敗が揺れる対戦ゲームです。
+            相手の練度は隠され、取った駒だけが正体を見せます。
           </p>
         </div>
         <aside class="hero-note">
@@ -24,7 +45,7 @@ export function renderHtml() {
             <li>対局ルームを作る</li>
             <li>招待URLを共有する</li>
             <li>二人まで入室する</li>
-            <li>初期盤面を確認する</li>
+            <li>初期配置から一手だけ指す</li>
           </ul>
         </aside>
       </section>
@@ -45,7 +66,7 @@ export function renderHtml() {
 
         <div class="row actions">
           <button id="create-room" class="primary">新しい対局室を作る</button>
-          <button id="refresh-room">部屋情報を更新する</button>
+          <button id="refresh-room">部屋の状態を更新する</button>
         </div>
 
         <div class="row room-line">
@@ -61,7 +82,8 @@ export function renderHtml() {
         </div>
 
         <p class="help-text">
-          まず部屋を作り、そのあと招待URLを相手に渡すのが最も自然です。
+          先に部屋を作ると、そのあと招待URLを相手に共有できます。
+          招待リンクで開いた側は自動で入室接続を試みます。
         </p>
       </section>
 
@@ -69,21 +91,21 @@ export function renderHtml() {
         <article class="panel board-panel">
           <div class="panel-head">
             <div>
-              <p class="section-kicker">対局盤</p>
-              <h2>初期配置</h2>
+              <p class="section-kicker">対局面</p>
+              <h2>盤面表示</h2>
             </div>
             <div class="turn-badges">
-              <span class="chip" id="phase-label">入室受付中</span>
+              <span class="chip" id="phase-label">入室待機中</span>
               <span class="pill" id="turn-label">手番: 先手</span>
             </div>
           </div>
 
           <div class="captured captured-top">
             <div class="captured-head">
-              <span>後手の持ち駒</span>
-              <span class="captured-note">今は未使用</span>
+              <span id="top-captured-label">後手の持ち駒</span>
+              <span class="captured-note">打つ機能は未実装</span>
             </div>
-            <div id="gote-captured" class="captured-list"></div>
+            <div id="top-captured" class="captured-list"></div>
           </div>
 
           <div class="board-wrap">
@@ -96,10 +118,10 @@ export function renderHtml() {
 
           <div class="captured captured-bottom">
             <div class="captured-head">
-              <span>先手の持ち駒</span>
-              <span class="captured-note">今は未使用</span>
+              <span id="bottom-captured-label">先手の持ち駒</span>
+              <span class="captured-note">打つ機能は未実装</span>
             </div>
-            <div id="sente-captured" class="captured-list"></div>
+            <div id="bottom-captured" class="captured-list"></div>
           </div>
         </article>
 
@@ -604,7 +626,7 @@ button:hover {
     0 2px 6px rgba(40, 24, 8, 0.08);
 }
 
-.piece.gote {
+.piece.opponent {
   transform: rotate(180deg);
 }
 
@@ -739,6 +761,8 @@ button:hover {
 export const appJs = `
 const FILE_LABELS = ["9", "8", "7", "6", "5", "4", "3", "2", "1"];
 const RANK_LABELS = ["一", "二", "三", "四", "五", "六", "七", "八", "九"];
+const PIECE_LABELS = ${JSON.stringify(PIECE_LABELS)};
+const PROMOTED_LABELS = ${JSON.stringify(PROMOTED_LABELS)};
 
 const state = {
   roomId: "",
@@ -765,8 +789,10 @@ const elements = {
   eventLog: document.querySelector("#event-log"),
   phaseLabel: document.querySelector("#phase-label"),
   turnLabel: document.querySelector("#turn-label"),
-  goteCaptured: document.querySelector("#gote-captured"),
-  senteCaptured: document.querySelector("#sente-captured"),
+  topCapturedLabel: document.querySelector("#top-captured-label"),
+  bottomCapturedLabel: document.querySelector("#bottom-captured-label"),
+  topCaptured: document.querySelector("#top-captured"),
+  bottomCaptured: document.querySelector("#bottom-captured"),
   board: document.querySelector("#board"),
   boardTopLabels: document.querySelector("#board-top-labels"),
   boardSideLabels: document.querySelector("#board-side-labels")
@@ -783,8 +809,7 @@ function bootstrap() {
   elements.playerIdLabel.textContent = state.playerId;
 
   renderBoardLabels();
-  renderCaptured("gote", []);
-  renderCaptured("sente", []);
+  renderCapturedAreas();
   renderBoard(null);
 
   elements.board.addEventListener("click", handleBoardClick);
@@ -798,10 +823,11 @@ function bootstrap() {
     state.roomId = roomId;
     elements.roomId.value = roomId;
     updateInviteLink();
-    refreshRoomState();
-  } else {
-    appendLog("部屋はまだ選ばれていません。新しく作るか、招待URLから入ってください。");
+    connectRoom();
+    return;
   }
+
+  appendLog("ルームをまだ選ばれていません。新しく作るか、招待URLから入ってください。");
 }
 
 async function createRoom() {
@@ -809,6 +835,11 @@ async function createRoom() {
   appendLog("対局室を作成しています...");
 
   const response = await fetch("/api/rooms", { method: "POST" });
+  if (!response.ok) {
+    appendLog("対局室の作成に失敗しました。");
+    return;
+  }
+
   const room = await response.json();
   applyRoom(room);
   appendLog("対局室を作成しました。ルームID: " + room.roomId);
@@ -824,13 +855,13 @@ async function refreshRoomState() {
 
   const response = await fetch("/api/rooms/" + roomId);
   if (!response.ok) {
-    appendLog("部屋情報の取得に失敗しました。status=" + response.status);
+    appendLog("部屋の取得に失敗しました。status=" + response.status);
     return;
   }
 
   const room = await response.json();
   applyRoom(room);
-  appendLog("部屋情報を更新しました。");
+  appendLog("部屋の状態を更新しました。");
 }
 
 async function connectRoom() {
@@ -847,6 +878,7 @@ async function connectRoom() {
   replaceQuery(roomId);
 
   if (state.socket) {
+    state.socket._manualClose = true;
     state.socket.close();
   }
 
@@ -855,26 +887,51 @@ async function connectRoom() {
   state.socket = socket;
 
   socket.addEventListener("open", () => {
+    if (state.socket !== socket) {
+      return;
+    }
+
     setConnection(true);
     appendLog("接続しました。参加情報を送信します。");
     socket.send(JSON.stringify({
       type: "join",
       playerId: state.playerId,
-      name: elements.playerName.value.trim() || "対局者"
+      name: elements.playerName.value.trim() || "ゲスト"
     }));
   });
 
   socket.addEventListener("message", (event) => {
+    if (state.socket !== socket) {
+      return;
+    }
+
     const payload = JSON.parse(event.data);
     appendLog("受信: " + formatMessage(payload));
+
     if (payload.room) {
       applyRoom(payload.room);
     }
   });
 
+  socket.addEventListener("error", () => {
+    if (state.socket !== socket) {
+      return;
+    }
+
+    appendLog("接続で問題が発生しました。");
+  });
+
   socket.addEventListener("close", () => {
-    setConnection(false);
-    appendLog("接続が閉じられました。");
+    if (socket._manualClose) {
+      return;
+    }
+
+    if (state.socket === socket) {
+      state.socket = null;
+      setConnection(false);
+    }
+
+    appendLog("接続が切れました。");
   });
 }
 
@@ -884,8 +941,12 @@ async function copyInviteLink() {
     return;
   }
 
-  await navigator.clipboard.writeText(elements.inviteLink.value);
-  appendLog("招待URLをコピーしました。");
+  try {
+    await navigator.clipboard.writeText(elements.inviteLink.value);
+    appendLog("招待URLをコピーしました。");
+  } catch {
+    appendLog("URLのコピーに失敗しました。");
+  }
 }
 
 function applyRoom(room) {
@@ -898,13 +959,13 @@ function applyRoom(room) {
   elements.roomLabel.textContent = room.roomId;
   elements.statusLabel.textContent = formatStatus(room.status);
   elements.phaseLabel.textContent = formatPhase(room.game?.phase);
-  elements.turnLabel.textContent = "手番: " + formatSeat(room.game?.currentTurn);
+  elements.turnLabel.textContent = formatTurn(room.game);
   updateInviteLink();
   replaceQuery(room.roomId);
 
-  renderPlayers(room.players);
-  renderCaptured("gote", room.game?.captured?.gote ?? []);
-  renderCaptured("sente", room.game?.captured?.sente ?? []);
+  renderPlayers(room.players ?? []);
+  renderBoardLabels();
+  renderCapturedAreas();
   renderBoard(room.game?.board ?? null);
 }
 
@@ -913,10 +974,10 @@ function renderPlayers(players) {
 
   for (const player of players) {
     const item = document.createElement("li");
-    const own = player.id === state.playerId ? "（あなた）" : "";
+    const ownSuffix = player.id === state.playerId ? "（あなた）" : "";
     item.innerHTML =
       "<div class=\\"player-main\\">" +
-      "<span class=\\"player-name\\">" + escapeHtml(player.name) + own + "</span>" +
+      "<span class=\\"player-name\\">" + escapeHtml(player.name) + ownSuffix + "</span>" +
       "<span class=\\"player-id\\">ID: " + escapeHtml(player.id) + "</span>" +
       "</div>" +
       "<span class=\\"player-seat\\">" + formatSeat(player.seat) + "</span>";
@@ -932,12 +993,25 @@ function renderPlayers(players) {
 }
 
 function renderBoardLabels() {
-  elements.boardTopLabels.innerHTML = "<span></span>" + FILE_LABELS.map((label) => "<span class=\\"board-axis\\">" + label + "</span>").join("");
-  elements.boardSideLabels.innerHTML = RANK_LABELS.map((label) => "<span class=\\"board-axis\\">" + label + "</span>").join("");
+  const orientation = getBoardOrientation();
+  const fileLabels = orientation === "gote" ? [...FILE_LABELS].reverse() : FILE_LABELS;
+  const rankLabels = orientation === "gote" ? [...RANK_LABELS].reverse() : RANK_LABELS;
+
+  elements.boardTopLabels.innerHTML =
+    "<span></span>" +
+    fileLabels.map((label) => "<span class=\\"board-axis\\">" + label + "</span>").join("");
+
+  elements.boardSideLabels.innerHTML =
+    rankLabels.map((label) => "<span class=\\"board-axis\\">" + label + "</span>").join("");
 }
 
 function renderBoard(board) {
   elements.board.innerHTML = "";
+  const orientation = getBoardOrientation();
+  const fileLabels = orientation === "gote" ? [...FILE_LABELS].reverse() : FILE_LABELS;
+  const rankLabels = orientation === "gote" ? [...RANK_LABELS].reverse() : RANK_LABELS;
+  const displayRows = orientation === "gote" ? [...Array(9).keys()].reverse() : [...Array(9).keys()];
+  const displayCols = orientation === "gote" ? [...Array(9).keys()].reverse() : [...Array(9).keys()];
 
   if (!board) {
     for (let i = 0; i < 81; i += 1) {
@@ -948,11 +1022,12 @@ function renderBoard(board) {
     return;
   }
 
-  board.forEach((row, rowIndex) => {
-    row.forEach((piece, colIndex) => {
+  displayRows.forEach((rowIndex, displayRow) => {
+    displayCols.forEach((colIndex, displayCol) => {
+      const piece = board[rowIndex][colIndex];
       const square = document.createElement("div");
       square.className = "square" + (piece ? "" : " empty");
-      square.dataset.pos = FILE_LABELS[colIndex] + RANK_LABELS[rowIndex];
+      square.dataset.pos = fileLabels[displayCol] + rankLabels[displayRow];
       square.dataset.row = String(rowIndex);
       square.dataset.col = String(colIndex);
 
@@ -969,10 +1044,16 @@ function renderBoard(board) {
         }
 
         const pieceNode = document.createElement("div");
-        pieceNode.className = "piece " + piece.owner + (piece.promoted ? " promoted" : "");
+        pieceNode.className = "piece" + (piece.promoted ? " promoted" : "");
+
+        if (piece.owner !== orientation) {
+          pieceNode.classList.add("opponent");
+        }
+
         if (canSelectPiece(piece)) {
           pieceNode.classList.add("selectable");
         }
+
         pieceNode.textContent = pieceLabel(piece);
         square.appendChild(pieceNode);
       } else if (state.legalMoves.some((move) => move.row === rowIndex && move.col === colIndex)) {
@@ -984,8 +1065,19 @@ function renderBoard(board) {
   });
 }
 
-function renderCaptured(owner, pieces) {
-  const target = owner === "gote" ? elements.goteCaptured : elements.senteCaptured;
+function renderCapturedAreas() {
+  const orientation = getBoardOrientation();
+  const topOwner = orientation === "gote" ? "sente" : "gote";
+  const bottomOwner = orientation === "gote" ? "gote" : "sente";
+
+  elements.topCapturedLabel.textContent = ownerLabel(topOwner) + "の持ち駒";
+  elements.bottomCapturedLabel.textContent = ownerLabel(bottomOwner) + "の持ち駒";
+
+  renderCapturedList(elements.topCaptured, state.room?.game?.captured?.[topOwner] ?? []);
+  renderCapturedList(elements.bottomCaptured, state.room?.game?.captured?.[bottomOwner] ?? []);
+}
+
+function renderCapturedList(target, pieces) {
   target.innerHTML = "";
 
   if (pieces.length === 0) {
@@ -1005,7 +1097,11 @@ function renderCaptured(owner, pieces) {
 }
 
 function pieceLabel(piece) {
-  return piece.promoted ? "成" + piece.kind : piece.kind;
+  if (piece.promoted) {
+    return PROMOTED_LABELS[piece.kind] ?? ("成" + (PIECE_LABELS[piece.kind] ?? piece.kind));
+  }
+
+  return PIECE_LABELS[piece.kind] ?? piece.kind;
 }
 
 async function handleBoardClick(event) {
@@ -1073,7 +1169,7 @@ async function moveSelectedPiece(toRow, toCol) {
     return;
   }
 
-  appendLog("1手進みました。");
+  appendLog("一手進みました。");
   applyRoom(payload);
 }
 
@@ -1098,6 +1194,10 @@ function canSelectPiece(piece) {
 
 function currentPlayerSeat() {
   return state.room?.players?.find((player) => player.id === state.playerId)?.seat ?? null;
+}
+
+function getBoardOrientation() {
+  return currentPlayerSeat() === "gote" ? "gote" : "sente";
 }
 
 function updateInviteLink() {
@@ -1131,7 +1231,7 @@ function setConnection(isOnline) {
 }
 
 function appendLog(message) {
-  const line = "［" + new Date().toLocaleTimeString("ja-JP") + "］" + message;
+  const line = "【" + new Date().toLocaleTimeString("ja-JP") + "】" + message;
   elements.eventLog.textContent = line + "\\n" + elements.eventLog.textContent;
 }
 
@@ -1154,9 +1254,10 @@ function formatStatus(status) {
 }
 
 function formatPhase(phase) {
-  if (phase === "lobby") return "入室受付中";
-  if (phase === "ready") return "対局準備完了";
+  if (phase === "lobby") return "入室待機中";
+  if (phase === "ready") return "対局開始待ち";
   if (phase === "active") return "対局中";
+  if (phase === "finished") return "終局";
   return "未設定";
 }
 
@@ -1166,16 +1267,28 @@ function formatSeat(seat) {
   return seat || "未定";
 }
 
+function ownerLabel(owner) {
+  return owner === "gote" ? "後手" : "先手";
+}
+
+function formatTurn(game) {
+  if (game?.phase === "finished" && game.result?.winner) {
+    return "勝者: " + formatSeat(game.result.winner);
+  }
+
+  return "手番: " + formatSeat(game?.currentTurn);
+}
+
 function formatMessage(payload) {
-  if (payload.type === "connected") return "部屋との接続を確立しました。";
-  if (payload.type === "joined") return "入室情報が反映されました。";
+  if (payload.type === "connected") return "部屋との接続を確認しました。";
+  if (payload.type === "joined") return "参加情報が反映されました。";
   if (payload.type === "room_state") return "部屋の状態が更新されました。";
   if (payload.type === "error") return "エラー: " + payload.message;
   return JSON.stringify(payload);
 }
 
 function escapeHtml(value) {
-  return value
+  return String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")

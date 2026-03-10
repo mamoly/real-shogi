@@ -1,76 +1,65 @@
 import { DurableObject } from "cloudflare:workers";
 
-const PIECE_CODE = {
-  "歩": "fu",
-  "香": "kyo",
-  "桂": "kei",
-  "銀": "gin",
-  "金": "kin",
-  "角": "kaku",
-  "飛": "hi",
-  "王": "ou"
+const PIECE_ID_PART = {
+  FU: "fu",
+  KY: "kyo",
+  KE: "kei",
+  GI: "gin",
+  KI: "kin",
+  KA: "kaku",
+  HI: "hi",
+  OU: "ou"
 };
+
+const BACK_RANK = ["KY", "KE", "GI", "KI", "OU", "KI", "GI", "KE", "KY"];
+const GOTE_SECOND_RANK = [null, "HI", null, null, null, null, null, "KA", null];
+const SENTE_SECOND_RANK = [null, "KA", null, null, null, null, null, "HI", null];
+const PROMOTES_TO_GOLD = new Set(["FU", "KY", "KE", "GI"]);
 
 function createPiece(owner, kind, index) {
   return {
-    id: `${owner}-${PIECE_CODE[kind]}-${index}`,
+    id: `${owner}-${PIECE_ID_PART[kind]}-${index}`,
     owner,
     kind,
-    promoted: false
+    promoted: false,
+    skill: null,
+    attempts: 0,
+    successes: 0
   };
 }
 
+function createRow(owner, layout, counters) {
+  return layout.map((kind) => {
+    if (!kind) {
+      return null;
+    }
+
+    counters[kind] = (counters[kind] ?? 0) + 1;
+    return createPiece(owner, kind, counters[kind]);
+  });
+}
+
+function createPawnRow(owner, counters) {
+  return Array.from({ length: 9 }, () => {
+    counters.FU = (counters.FU ?? 0) + 1;
+    return createPiece(owner, "FU", counters.FU);
+  });
+}
+
 function createInitialBoard() {
+  const goteCounts = {};
+  const senteCounts = {};
+
   return [
-    [
-      createPiece("gote", "香", 1),
-      createPiece("gote", "桂", 1),
-      createPiece("gote", "銀", 1),
-      createPiece("gote", "金", 1),
-      createPiece("gote", "王", 1),
-      createPiece("gote", "金", 2),
-      createPiece("gote", "銀", 2),
-      createPiece("gote", "桂", 2),
-      createPiece("gote", "香", 2)
-    ],
-    [
-      null,
-      createPiece("gote", "角", 1),
-      null,
-      null,
-      null,
-      null,
-      null,
-      createPiece("gote", "飛", 1),
-      null
-    ],
-    Array.from({ length: 9 }, (_, index) => createPiece("gote", "歩", index + 1)),
+    createRow("gote", BACK_RANK, goteCounts),
+    createRow("gote", GOTE_SECOND_RANK, goteCounts),
+    createPawnRow("gote", goteCounts),
     Array.from({ length: 9 }, () => null),
     Array.from({ length: 9 }, () => null),
     Array.from({ length: 9 }, () => null),
-    Array.from({ length: 9 }, (_, index) => createPiece("sente", "歩", index + 1)),
-    [
-      null,
-      createPiece("sente", "飛", 1),
-      null,
-      null,
-      null,
-      null,
-      null,
-      createPiece("sente", "角", 1),
-      null
-    ],
-    [
-      createPiece("sente", "香", 1),
-      createPiece("sente", "桂", 1),
-      createPiece("sente", "銀", 1),
-      createPiece("sente", "金", 1),
-      createPiece("sente", "王", 1),
-      createPiece("sente", "金", 2),
-      createPiece("sente", "銀", 2),
-      createPiece("sente", "桂", 2),
-      createPiece("sente", "香", 2)
-    ]
+    createPawnRow("sente", senteCounts),
+    createRow("sente", SENTE_SECOND_RANK, senteCounts),
+    createRow("sente", BACK_RANK, senteCounts)
   ];
 }
 
@@ -144,6 +133,7 @@ function pushRayMoves(board, owner, moves, startRow, startCol, deltaRow, deltaCo
 
   while (insideBoard(row, col)) {
     const target = board[row][col];
+
     if (!target) {
       moves.push({ row, col });
     } else {
@@ -158,7 +148,7 @@ function pushRayMoves(board, owner, moves, startRow, startCol, deltaRow, deltaCo
   }
 }
 
-function goldLikeMoves(owner) {
+function goldLikeOffsets(owner) {
   const forward = directionFor(owner);
   return [
     [forward, -1],
@@ -170,7 +160,7 @@ function goldLikeMoves(owner) {
   ];
 }
 
-function kingLikeMoves() {
+function kingLikeOffsets() {
   return [
     [-1, -1],
     [-1, 0],
@@ -189,30 +179,30 @@ function legalMovesForPiece(board, pieceInfo) {
   const owner = piece.owner;
   const forward = directionFor(owner);
 
-  if (piece.promoted && ["歩", "香", "桂", "銀"].includes(piece.kind)) {
-    goldLikeMoves(owner).forEach(([deltaRow, deltaCol]) => {
+  if (piece.promoted && PROMOTES_TO_GOLD.has(piece.kind)) {
+    goldLikeOffsets(owner).forEach(([deltaRow, deltaCol]) => {
       pushStepMove(board, owner, moves, row + deltaRow, col + deltaCol);
     });
     return moves;
   }
 
-  if (piece.kind === "歩") {
+  if (piece.kind === "FU") {
     pushStepMove(board, owner, moves, row + forward, col);
     return moves;
   }
 
-  if (piece.kind === "香") {
+  if (piece.kind === "KY") {
     pushRayMoves(board, owner, moves, row, col, forward, 0);
     return moves;
   }
 
-  if (piece.kind === "桂") {
+  if (piece.kind === "KE") {
     pushStepMove(board, owner, moves, row + forward * 2, col - 1);
     pushStepMove(board, owner, moves, row + forward * 2, col + 1);
     return moves;
   }
 
-  if (piece.kind === "銀") {
+  if (piece.kind === "GI") {
     [
       [forward, -1],
       [forward, 0],
@@ -225,21 +215,21 @@ function legalMovesForPiece(board, pieceInfo) {
     return moves;
   }
 
-  if (piece.kind === "金") {
-    goldLikeMoves(owner).forEach(([deltaRow, deltaCol]) => {
+  if (piece.kind === "KI") {
+    goldLikeOffsets(owner).forEach(([deltaRow, deltaCol]) => {
       pushStepMove(board, owner, moves, row + deltaRow, col + deltaCol);
     });
     return moves;
   }
 
-  if (piece.kind === "王") {
-    kingLikeMoves().forEach(([deltaRow, deltaCol]) => {
+  if (piece.kind === "OU") {
+    kingLikeOffsets().forEach(([deltaRow, deltaCol]) => {
       pushStepMove(board, owner, moves, row + deltaRow, col + deltaCol);
     });
     return moves;
   }
 
-  if (piece.kind === "角") {
+  if (piece.kind === "KA") {
     [
       [-1, -1],
       [-1, 1],
@@ -263,7 +253,7 @@ function legalMovesForPiece(board, pieceInfo) {
     return moves;
   }
 
-  if (piece.kind === "飛") {
+  if (piece.kind === "HI") {
     [
       [-1, 0],
       [1, 0],
@@ -298,13 +288,36 @@ function seatForPlayer(roomState, playerId) {
   return roomState.players.find((player) => player.id === playerId)?.seat ?? null;
 }
 
+function syncRoomLifecycle(roomState) {
+  if (roomState.game.phase === "finished") {
+    roomState.status = "finished";
+    return;
+  }
+
+  if (roomState.players.length < 2) {
+    roomState.status = "waiting";
+    roomState.game.phase = "lobby";
+    return;
+  }
+
+  if (roomState.game.moveNumber > 1) {
+    roomState.status = "active";
+    roomState.game.phase = "active";
+    return;
+  }
+
+  roomState.status = "ready";
+  roomState.game.phase = "ready";
+}
+
 export class GameRoom extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.ctx = ctx;
     this.env = env;
-    this.sessions = new Set();
+    this.sessions = new Set(this.ctx.getWebSockets());
     this.roomState = createDefaultRoomState();
+
     this.ctx.blockConcurrencyWhile(async () => {
       const stored = await this.ctx.storage.get("roomState");
       if (stored) {
@@ -318,6 +331,7 @@ export class GameRoom extends DurableObject {
 
     if (url.pathname === "/init" && request.method === "POST") {
       const payload = await request.json();
+
       if (!this.roomState.roomId) {
         this.roomState = {
           roomId: payload.roomId,
@@ -402,6 +416,8 @@ export class GameRoom extends DurableObject {
 
       board[pieceInfo.row][pieceInfo.col] = null;
       board[payload.toRow][payload.toCol] = movingPiece;
+      movingPiece.attempts += 1;
+      movingPiece.successes += 1;
 
       if (capturedPiece) {
         this.roomState.game.captured[seat].push({
@@ -411,19 +427,17 @@ export class GameRoom extends DurableObject {
         });
       }
 
-      if (capturedPiece?.kind === "王") {
-        this.roomState.status = "finished";
+      if (capturedPiece?.kind === "OU") {
         this.roomState.game.phase = "finished";
         this.roomState.game.result = {
           winner: seat
         };
       } else {
-        this.roomState.status = this.roomState.players.length === 2 ? "active" : "waiting";
-        this.roomState.game.phase = this.roomState.players.length === 2 ? "active" : "lobby";
         this.roomState.game.currentTurn = seat === "sente" ? "gote" : "sente";
         this.roomState.game.moveNumber += 1;
       }
 
+      syncRoomLifecycle(this.roomState);
       await this.saveState();
       this.broadcast({ type: "room_state", room: this.roomState });
       return Response.json(this.roomState);
@@ -447,15 +461,15 @@ export class GameRoom extends DurableObject {
     }
 
     if (payload.type === "join") {
-      const exists = this.roomState.players.find((entry) => entry.id === payload.playerId);
+      const existingPlayer = this.roomState.players.find((entry) => entry.id === payload.playerId);
 
-      if (!exists && this.roomState.players.length >= 2) {
+      if (!existingPlayer && this.roomState.players.length >= 2) {
         ws.send(JSON.stringify({ type: "error", message: "Room is full" }));
         return;
       }
 
-      if (exists) {
-        exists.name = payload.name ?? exists.name;
+      if (existingPlayer) {
+        existingPlayer.name = payload.name ?? existingPlayer.name;
       } else {
         this.roomState.players.push({
           id: payload.playerId,
@@ -464,8 +478,7 @@ export class GameRoom extends DurableObject {
         });
       }
 
-      this.roomState.status = this.roomState.players.length === 2 ? "ready" : "waiting";
-      this.roomState.game.phase = this.roomState.players.length === 2 ? "ready" : "lobby";
+      syncRoomLifecycle(this.roomState);
       await this.saveState();
 
       ws.send(JSON.stringify({ type: "joined", room: this.roomState }));
@@ -477,6 +490,10 @@ export class GameRoom extends DurableObject {
   }
 
   webSocketClose(ws) {
+    this.sessions.delete(ws);
+  }
+
+  webSocketError(ws) {
     this.sessions.delete(ws);
   }
 
@@ -492,8 +509,19 @@ export class GameRoom extends DurableObject {
 
   broadcast(payload) {
     const encoded = JSON.stringify(payload);
-    for (const session of this.sessions) {
-      session.send(encoded);
+    const sessions = new Set([...this.ctx.getWebSockets(), ...this.sessions]);
+
+    for (const session of sessions) {
+      if (session.readyState !== WebSocket.OPEN) {
+        this.sessions.delete(session);
+        continue;
+      }
+
+      try {
+        session.send(encoded);
+      } catch {
+        this.sessions.delete(session);
+      }
     }
   }
 }
